@@ -1,3 +1,5 @@
+// src/index.ts
+
 export interface Env {
   // Secrets
   NAVER_CLIENT_ID: string;
@@ -8,13 +10,13 @@ export interface Env {
 
   // Vars (wrangler.toml [vars]) — 폴백용
   APP_NAME?: string;
-  SEARCH_KEYWORDS?: string;     // "FC안양,안양FC,K리그2"
-  INCLUDE_KEYWORDS?: string;    // "승격,감독,영입,부상"
-  EXCLUDE_KEYWORDS?: string;    // "야구"
+  SEARCH_KEYWORDS?: string;     // 멀티라인/쉼표 입력 지원
+  INCLUDE_KEYWORDS?: string;
+  EXCLUDE_KEYWORDS?: string;
   DISPLAY_PER_CALL?: string;    // "30"
   MAX_LOOPS?: string;           // "3"
-  MIN_SEND_THRESHOLD?: string;  // "3"
-  FORCE_HOURS?: string;         // "0,8,10,12,14,16,18,20,22"
+  MIN_SEND_THRESHOLD?: string;  // "1"
+  FORCE_HOURS?: string;         // "0,2,4,6,8,10,12,14,16,18,20,22"
 
   // KV
   FCANEWS_KV: KVNamespace;
@@ -45,6 +47,20 @@ function parseListText(raw?: string): string[] {
     .flatMap(s => s.split(/\s*,\s*/g))
     .map(s => s.replace(/^['"]|['"]$/g, "").trim())
     .filter(Boolean);
+}
+
+// ✅ 비어있지 않은 리스트를 우선 선택 (KV → TOML vars → 기본값)
+function pickList(...cands: Array<string | undefined | null>): string[] {
+  for (const c of cands) {
+    const arr = parseListText(c || undefined);
+    if (arr.length) return arr;
+  }
+  return [];
+}
+
+// ✅ 숫자 리스트 버전
+function pickNumList(...cands: Array<string | undefined | null>): number[] {
+  return pickList(...cands).map(Number).filter(Number.isFinite);
 }
 
 function splitCSV(v?: string): string[] {
@@ -129,7 +145,7 @@ type AppConfig = {
   display_per_call: number;
   max_loops: number;
   min_send_threshold: number;
-  force_hours: number[];
+  force_hours: number[]; // KST 기준 시간대(정수)
 };
 
 function parseNumber(n: any, def: number, min?: number, max?: number): number {
@@ -141,7 +157,7 @@ function parseNumber(n: any, def: number, min?: number, max?: number): number {
 }
 
 async function loadConfig(env: Env): Promise<AppConfig> {
-  // 개별 텍스트 키(따옴표 없는 간단 입력) 우선 확보
+  // KV에 단일 텍스트로 저장된 키들 (운영자가 대시보드에서 수정 가능)
   const kvSearch = await env.FCANEWS_KV.get("SEARCH_KEYWORDS");
   const kvInclude = await env.FCANEWS_KV.get("INCLUDE_KEYWORDS");
   const kvExclude = await env.FCANEWS_KV.get("EXCLUDE_KEYWORDS");
@@ -156,16 +172,30 @@ async function loadConfig(env: Env): Promise<AppConfig> {
     if (raw) {
       const cfg = JSON.parse(raw);
       return {
-        search_keywords: Array.isArray(cfg.search_keywords) ? cfg.search_keywords : (parseListText(kvSearch) || splitCSV(env.SEARCH_KEYWORDS)),
-        include_keywords: Array.isArray(cfg.include_keywords) ? cfg.include_keywords : (parseListText(kvInclude) || splitCSV(env.INCLUDE_KEYWORDS)),
-        exclude_keywords: Array.isArray(cfg.exclude_keywords) ? cfg.exclude_keywords : (parseListText(kvExclude) || splitCSV(env.EXCLUDE_KEYWORDS)),
-        display_per_call: parseNumber(cfg.display_per_call ?? kvDisplay ?? env.DISPLAY_PER_CALL ?? "30", 30, 1, 100),
-        max_loops: parseNumber(cfg.max_loops ?? kvMaxLoops ?? env.MAX_LOOPS ?? "3", 3, 1, 10),
-        min_send_threshold: parseNumber(cfg.min_send_threshold ?? kvMinSend ?? env.MIN_SEND_THRESHOLD ?? "3", 3, 0, 100),
+        search_keywords: Array.isArray(cfg.search_keywords)
+          ? cfg.search_keywords
+          : pickList(kvSearch, env.SEARCH_KEYWORDS),
+        include_keywords: Array.isArray(cfg.include_keywords)
+          ? cfg.include_keywords
+          : pickList(kvInclude, env.INCLUDE_KEYWORDS),
+        exclude_keywords: Array.isArray(cfg.exclude_keywords)
+          ? cfg.exclude_keywords
+          : pickList(kvExclude, env.EXCLUDE_KEYWORDS),
+        display_per_call: parseNumber(
+          cfg.display_per_call ?? kvDisplay ?? env.DISPLAY_PER_CALL ?? "30",
+          30, 1, 100
+        ),
+        max_loops: parseNumber(
+          cfg.max_loops ?? kvMaxLoops ?? env.MAX_LOOPS ?? "3",
+          3, 1, 10
+        ),
+        min_send_threshold: parseNumber(
+          cfg.min_send_threshold ?? kvMinSend ?? env.MIN_SEND_THRESHOLD ?? "1",
+          1, 0, 100
+        ),
         force_hours: Array.isArray(cfg.force_hours)
           ? cfg.force_hours
-          : (parseListText(kvForce).map(Number).filter(Number.isFinite)
-              || splitCSV(env.FORCE_HOURS ?? "0,8,10,12,14,16,18,20,22").map(Number).filter(Number.isFinite)),
+          : pickNumList(kvForce, env.FORCE_HOURS, "0,2,4,6,8,10,12,14,16,18,20,22"),
       };
     }
   } catch (e) {
@@ -174,14 +204,13 @@ async function loadConfig(env: Env): Promise<AppConfig> {
 
   // 2) 개별 텍스트 키 → 없으면 vars 폴백
   return {
-    search_keywords: parseListText(kvSearch) || splitCSV(env.SEARCH_KEYWORDS),
-    include_keywords: parseListText(kvInclude) || splitCSV(env.INCLUDE_KEYWORDS),
-    exclude_keywords: parseListText(kvExclude) || splitCSV(env.EXCLUDE_KEYWORDS),
+    search_keywords: pickList(kvSearch, env.SEARCH_KEYWORDS),
+    include_keywords: pickList(kvInclude, env.INCLUDE_KEYWORDS),
+    exclude_keywords: pickList(kvExclude, env.EXCLUDE_KEYWORDS),
     display_per_call: parseNumber(kvDisplay ?? env.DISPLAY_PER_CALL ?? "30", 30, 1, 100),
     max_loops: parseNumber(kvMaxLoops ?? env.MAX_LOOPS ?? "3", 3, 1, 10),
-    min_send_threshold: parseNumber(kvMinSend ?? env.MIN_SEND_THRESHOLD ?? "3", 3, 0, 100),
-    force_hours: (parseListText(kvForce).map(Number).filter(Number.isFinite)
-      || splitCSV(env.FORCE_HOURS ?? "0,8,10,12,14,16,18,20,22").map(Number).filter(Number.isFinite)),
+    min_send_threshold: parseNumber(kvMinSend ?? env.MIN_SEND_THRESHOLD ?? "1", 1, 0, 100),
+    force_hours: pickNumList(kvForce, env.FORCE_HOURS, "0,2,4,6,8,10,12,14,16,18,20,22"),
   };
 }
 
@@ -300,12 +329,41 @@ async function searchRecentNews(env: Env) {
 /* ───────────────────────── policy helpers ───────────────────────── */
 function computeShouldSend(nowKST: Date, candidateCount: number, minSend: number, forceHours: number[]) {
   const FORCED = new Set(forceHours);
+  // toKST로 보정된 Date에서 getUTCHours()는 'KST 시각'이 됨
   return FORCED.has(nowKST.getUTCHours())
     ? (candidateCount >= 1)
     : (candidateCount >= minSend);
 }
 
-/* ───────────────────────── HTTP handlers ───────────────────────── */
+/* ───────────────────────── HTTP: test/preview & env ───────────────────────── */
+// 디버그용 마스킹
+const mask = (s?: string) => (s ? s.slice(0, 4) + "***" + s.slice(-4) : "");
+
+// /env 스냅샷
+function buildEnvSnapshot(env: Env) {
+  return {
+    app: {
+      APP_NAME: env.APP_NAME ?? null,
+    },
+    raw_vars: {
+      SEARCH_KEYWORDS: env.SEARCH_KEYWORDS ?? null,
+      INCLUDE_KEYWORDS: env.INCLUDE_KEYWORDS ?? null,
+      EXCLUDE_KEYWORDS: env.EXCLUDE_KEYWORDS ?? null,
+      DISPLAY_PER_CALL: env.DISPLAY_PER_CALL ?? null,
+      MAX_LOOPS: env.MAX_LOOPS ?? null,
+      MIN_SEND_THRESHOLD: env.MIN_SEND_THRESHOLD ?? null,
+      FORCE_HOURS: env.FORCE_HOURS ?? null,
+    },
+    secrets_masked: {
+      NAVER_CLIENT_ID: mask(env.NAVER_CLIENT_ID),
+      NAVER_CLIENT_SECRET: mask(env.NAVER_CLIENT_SECRET),
+      TELEGRAM_BOT_TOKEN: mask(env.TELEGRAM_BOT_TOKEN),
+      TELEGRAM_CHAT_ID: mask(env.TELEGRAM_CHAT_ID),
+      ADMIN_CHAT_ID: mask(env.ADMIN_CHAT_ID),
+    },
+  };
+}
+
 async function handleTestPreview(env: Env) {
   const { cfg, collected, loopReports, latestStr, earliestStr } = await searchRecentNews(env);
   const nowUTC = new Date();
@@ -342,10 +400,40 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
 
+    // 임시 디버그 엔드포인트 (/env?admin=1)
+    if (url.pathname === "/env") {
+      if (url.searchParams.get("admin") !== "1") {
+        return new Response("forbidden", { status: 403 });
+      }
+      const snap = buildEnvSnapshot(env);
+
+      // (선택) ?kv=1 이면 KV의 개별 텍스트 키 힌트 포함
+      if (url.searchParams.get("kv") === "1") {
+        const [kvSearch, kvInclude, kvExclude, kvForce] = await Promise.all([
+          env.FCANEWS_KV.get("SEARCH_KEYWORDS"),
+          env.FCANEWS_KV.get("INCLUDE_KEYWORDS"),
+          env.FCANEWS_KV.get("EXCLUDE_KEYWORDS"),
+          env.FCANEWS_KV.get("FORCE_HOURS"),
+        ]);
+        (snap as any).kv_hints = {
+          SEARCH_KEYWORDS: kvSearch ?? null,
+          INCLUDE_KEYWORDS: kvInclude ?? null,
+          EXCLUDE_KEYWORDS: kvExclude ?? null,
+          FORCE_HOURS: kvForce ?? null,
+        };
+      }
+
+      return new Response(JSON.stringify(snap, null, 2), {
+        status: 200,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
+    }
+
     if (url.pathname === "/test") {
       return await handleTestPreview(env); // 공개 미리보기
     }
 
+    // 헬스체크/루트
     const now = new Date();
     const { targetKST, targetUTC } = computeTargetKST(now);
     return new Response(
