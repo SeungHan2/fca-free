@@ -1,7 +1,7 @@
 name = "fcanews-cron"
 main = "src/index.ts"
 compatibility_date = "2025-11-10"
-account_id = "${CF_ACCOUNT_ID}"
+account_id = "07b326a106b2b4ad2bdbbc44287f7671"
 
 
 [triggers]
