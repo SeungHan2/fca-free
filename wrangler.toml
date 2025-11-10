@@ -9,9 +9,20 @@ crons = ["0 1,3,5,7,9,11,13,15,17,19,21,23 * * *"]
 # ⬇️ 기본 파라미터(쉼표 구분). 필요 시 바꿔서 커밋만 하면 반영됩니다.
 [vars]
 APP_NAME = "fca-news"
-SEARCH_KEYWORDS  = "FC안양"
-INCLUDE_KEYWORDS = "안양"
-EXCLUDE_KEYWORDS = ""
+
+# 쉼표 또는 줄바꿈으로 구분 (개별 키워드에 따옴표 X)
+SEARCH_KEYWORDS = """
+FC안양
+"""
+
+INCLUDE_KEYWORDS = """
+안양
+"""
+
+EXCLUDE_KEYWORDS = """
+비글즈
+"""
+
 DISPLAY_PER_CALL = "30"   # 네이버 1페이지 건수(최대 100)
 MAX_LOOPS        = "3"    # 페이지 루프 횟수(1~3 권장)
 MIN_SEND_THRESHOLD = "1"  # 강제시간 외 발송 최소 건수
