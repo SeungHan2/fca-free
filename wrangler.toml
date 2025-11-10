@@ -1,0 +1,7 @@
+name = "fcanews-cron-ping"
+main = "src/index.ts"
+compatibility_date = "2025-11-10"
+
+[triggers]
+# ✅ KST 짝수시 정각=UTC 1,3,5,7,9,11,13,15,17,19,21,23 정각
+crons = ["0 1,3,5,7,9,11,13,15,17,19,21,23 * * *"]
