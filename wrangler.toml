@@ -62,7 +62,7 @@ EXCLUDE_KEYWORDS = """
 
 DISPLAY_PER_CALL = "30"      # 네이버 1페이지 건수(최대 100)
 MAX_LOOPS        = "3"       # 페이지 루프 횟수(1~3 권장)
-MIN_SEND_THRESHOLD = "1"     # 강제시간 외 발송 최소 건수
+MIN_SEND_THRESHOLD = "5"     # 강제시간 외 발송 최소 건수
 
 # (권장) 강제 발송 시간대(KST 시)
 FORCE_HOURS = "0,8,10,12,14,16,18,20,22"
