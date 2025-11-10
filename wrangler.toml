@@ -19,4 +19,4 @@ MIN_SEND_THRESHOLD = "0"  # 강제시간 외 발송 최소 건수
 # ✅ KV 바인딩(이미 생성한 네임스페이스 ID 입력)
 [[kv_namespaces]]
 binding = "FCANEWS_KV"
-id = "YOUR_KV_NAMESPACE_ID"
+id = "8905837e32424b3ebe73b6ad8c2ac23d"
