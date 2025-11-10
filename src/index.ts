@@ -6,15 +6,15 @@ export interface Env {
   TELEGRAM_CHAT_ID: string;  // 본채널
   ADMIN_CHAT_ID: string;     // 관리자 리포트 채널/개인
 
-  // Vars (wrangler.toml [vars]) — 이제 "폴백" 용도로만 사용
+  // Vars (wrangler.toml [vars]) — 폴백용
   APP_NAME?: string;
-  SEARCH_KEYWORDS?: string;     // 예: "FC안양,안양FC,K리그2"
-  INCLUDE_KEYWORDS?: string;    // 예: "승격,감독,영입,부상"
-  EXCLUDE_KEYWORDS?: string;    // 예: "야구"
+  SEARCH_KEYWORDS?: string;     // "FC안양,안양FC,K리그2"
+  INCLUDE_KEYWORDS?: string;    // "승격,감독,영입,부상"
+  EXCLUDE_KEYWORDS?: string;    // "야구"
   DISPLAY_PER_CALL?: string;    // "30"
   MAX_LOOPS?: string;           // "3"
   MIN_SEND_THRESHOLD?: string;  // "3"
-  FORCE_HOURS?: string;         // 예: "0,8,10,12,14,16,18,20,22"
+  FORCE_HOURS?: string;         // "0,8,10,12,14,16,18,20,22"
 
   // KV
   FCANEWS_KV: KVNamespace;
@@ -27,14 +27,40 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const fmtUTC = (d: Date) =>
   `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
 
-const KV_LAST_SENT = "last_sent_target_iso";     // 짝수시 정각(UTC) ISO
-const KV_LAST_CHECKED = "last_checked_time_iso"; // 마지막 본 기사 시각(UTC) ISO
-const KV_CFG = "cfg:APP";                        // ✅ 설정 JSON 저장 키
+const KV_LAST_SENT = "last_sent_target_iso";      // 짝수시 정각(UTC) ISO
+const KV_LAST_CHECKED = "last_checked_time_iso";  // 마지막 본 기사 시각(UTC) ISO
+const KV_CFG = "cfg:APP";                         // 설정 JSON 저장 키
+
+// 줄바꿈/쉼표/세미콜론 구분 + 주석(#...) 무시 + 양끝 따옴표 제거
+function parseListText(raw?: string): string[] {
+  if (!raw) return [];
+  const cleaned = raw
+    .replace(/\r/g, "")
+    .split("\n")
+    .map(line => line.replace(/#.*/g, "").trim())
+    .filter(Boolean)
+    .join(",");
+  return cleaned
+    .split(/[;,，、]+|,/g)
+    .flatMap(s => s.split(/\s*,\s*/g))
+    .map(s => s.replace(/^['"]|['"]$/g, "").trim())
+    .filter(Boolean);
+}
 
 function splitCSV(v?: string): string[] {
   if (!v) return [];
   return v.split(",").map(s => s.trim()).filter(Boolean);
 }
+
+// 텍스트 정규화: NFKC + 소문자 + 연속 공백 축소
+function norm(s: string): string {
+  try {
+    return s.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+  } catch {
+    return s.toLowerCase().replace(/\s+/g, " ").trim();
+  }
+}
+
 function escapeHtml(s: string) {
   return s
     .replace(/&/g, "&amp;")
@@ -42,6 +68,8 @@ function escapeHtml(s: string) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 }
+
+// 추적 파라미터 제거 + https 고정 → 링크 중복 방지
 function normalizeUrl(u: string) {
   try {
     const url = new URL(u);
@@ -53,6 +81,8 @@ function normalizeUrl(u: string) {
     return u.trim();
   }
 }
+
+// NAVER pubDate("+0900" 포함) → UTC Instant (추가 보정 금지)
 function parsePubUTC(pub: string): Date | null {
   try {
     const dt = new Date(pub);
@@ -62,6 +92,8 @@ function parsePubUTC(pub: string): Date | null {
     return null;
   }
 }
+
+// 이번 타임(짝수시 정각, KST 기준) 목표 시각 계산 → UTC로 변환
 function computeTargetKST(fromUTC: Date) {
   const k = toKST(fromUTC);
   const t = new Date(k.getTime());
@@ -70,6 +102,7 @@ function computeTargetKST(fromUTC: Date) {
   const targetUTC = new Date(t.getTime() - KST_MS);
   return { targetKST: t, targetUTC };
 }
+
 async function sendTelegram(text: string, chatId: string, env: Env) {
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
   const res = await fetch(url, {
@@ -88,19 +121,7 @@ async function sendTelegram(text: string, chatId: string, env: Env) {
   }
 }
 
-/* ───────────────────────────── config loader ─────────────────────────────
-   KV(cfg:APP) → 없으면 wrangler.toml [vars] 폴백
-   cfg JSON 예시:
-   {
-     "search_keywords": ["FC안양","안양FC","K리그2"],
-     "include_keywords": ["승격","감독","영입","부상"],
-     "exclude_keywords": ["야구"],
-     "display_per_call": 30,
-     "max_loops": 3,
-     "min_send_threshold": 3,
-     "force_hours": [0,8,10,12,14,16,18,20,22]
-   }
---------------------------------------------------------------------------- */
+/* ───────────────────────────── config loader ───────────────────────────── */
 type AppConfig = {
   search_keywords: string[];
   include_keywords: string[];
@@ -120,33 +141,47 @@ function parseNumber(n: any, def: number, min?: number, max?: number): number {
 }
 
 async function loadConfig(env: Env): Promise<AppConfig> {
-  // 1) KV JSON 우선
+  // 개별 텍스트 키(따옴표 없는 간단 입력) 우선 확보
+  const kvSearch = await env.FCANEWS_KV.get("SEARCH_KEYWORDS");
+  const kvInclude = await env.FCANEWS_KV.get("INCLUDE_KEYWORDS");
+  const kvExclude = await env.FCANEWS_KV.get("EXCLUDE_KEYWORDS");
+  const kvDisplay = await env.FCANEWS_KV.get("DISPLAY_PER_CALL");
+  const kvMaxLoops = await env.FCANEWS_KV.get("MAX_LOOPS");
+  const kvMinSend = await env.FCANEWS_KV.get("MIN_SEND_THRESHOLD");
+  const kvForce = await env.FCANEWS_KV.get("FORCE_HOURS");
+
+  // 1) cfg:APP(JSON) 우선
   try {
     const raw = await env.FCANEWS_KV.get(KV_CFG);
     if (raw) {
       const cfg = JSON.parse(raw);
       return {
-        search_keywords: Array.isArray(cfg.search_keywords) ? cfg.search_keywords : splitCSV(env.SEARCH_KEYWORDS),
-        include_keywords: Array.isArray(cfg.include_keywords) ? cfg.include_keywords : splitCSV(env.INCLUDE_KEYWORDS),
-        exclude_keywords: Array.isArray(cfg.exclude_keywords) ? cfg.exclude_keywords : splitCSV(env.EXCLUDE_KEYWORDS),
-        display_per_call: parseNumber(cfg.display_per_call, parseNumber(env.DISPLAY_PER_CALL ?? "30", 30, 1, 100), 1, 100),
-        max_loops: parseNumber(cfg.max_loops, parseNumber(env.MAX_LOOPS ?? "3", 3, 1, 10), 1, 10),
-        min_send_threshold: parseNumber(cfg.min_send_threshold, parseNumber(env.MIN_SEND_THRESHOLD ?? "3", 3, 0, 100), 0, 100),
-        force_hours: Array.isArray(cfg.force_hours) ? cfg.force_hours : splitCSV(env.FORCE_HOURS ?? "0,8,10,12,14,16,18,20,22").map(n => Number(n)).filter(Number.isFinite),
+        search_keywords: Array.isArray(cfg.search_keywords) ? cfg.search_keywords : (parseListText(kvSearch) || splitCSV(env.SEARCH_KEYWORDS)),
+        include_keywords: Array.isArray(cfg.include_keywords) ? cfg.include_keywords : (parseListText(kvInclude) || splitCSV(env.INCLUDE_KEYWORDS)),
+        exclude_keywords: Array.isArray(cfg.exclude_keywords) ? cfg.exclude_keywords : (parseListText(kvExclude) || splitCSV(env.EXCLUDE_KEYWORDS)),
+        display_per_call: parseNumber(cfg.display_per_call ?? kvDisplay ?? env.DISPLAY_PER_CALL ?? "30", 30, 1, 100),
+        max_loops: parseNumber(cfg.max_loops ?? kvMaxLoops ?? env.MAX_LOOPS ?? "3", 3, 1, 10),
+        min_send_threshold: parseNumber(cfg.min_send_threshold ?? kvMinSend ?? env.MIN_SEND_THRESHOLD ?? "3", 3, 0, 100),
+        force_hours: Array.isArray(cfg.force_hours)
+          ? cfg.force_hours
+          : (parseListText(kvForce).map(Number).filter(Number.isFinite)
+              || splitCSV(env.FORCE_HOURS ?? "0,8,10,12,14,16,18,20,22").map(Number).filter(Number.isFinite)),
       };
     }
   } catch (e) {
-    console.error("loadConfig KV parse error", e);
+    console.error("loadConfig KV cfg:APP parse error", e);
   }
-  // 2) 폴백: wrangler.toml [vars]
+
+  // 2) 개별 텍스트 키 → 없으면 vars 폴백
   return {
-    search_keywords: splitCSV(env.SEARCH_KEYWORDS),
-    include_keywords: splitCSV(env.INCLUDE_KEYWORDS),
-    exclude_keywords: splitCSV(env.EXCLUDE_KEYWORDS),
-    display_per_call: parseNumber(env.DISPLAY_PER_CALL ?? "30", 30, 1, 100),
-    max_loops: parseNumber(env.MAX_LOOPS ?? "3", 3, 1, 10),
-    min_send_threshold: parseNumber(env.MIN_SEND_THRESHOLD ?? "3", 3, 0, 100),
-    force_hours: splitCSV(env.FORCE_HOURS ?? "0,8,10,12,14,16,18,20,22").map(n => Number(n)).filter(Number.isFinite),
+    search_keywords: parseListText(kvSearch) || splitCSV(env.SEARCH_KEYWORDS),
+    include_keywords: parseListText(kvInclude) || splitCSV(env.INCLUDE_KEYWORDS),
+    exclude_keywords: parseListText(kvExclude) || splitCSV(env.EXCLUDE_KEYWORDS),
+    display_per_call: parseNumber(kvDisplay ?? env.DISPLAY_PER_CALL ?? "30", 30, 1, 100),
+    max_loops: parseNumber(kvMaxLoops ?? env.MAX_LOOPS ?? "3", 3, 1, 10),
+    min_send_threshold: parseNumber(kvMinSend ?? env.MIN_SEND_THRESHOLD ?? "3", 3, 0, 100),
+    force_hours: (parseListText(kvForce).map(Number).filter(Number.isFinite)
+      || splitCSV(env.FORCE_HOURS ?? "0,8,10,12,14,16,18,20,22").map(Number).filter(Number.isFinite)),
   };
 }
 
@@ -202,7 +237,7 @@ async function searchRecentNews(env: Env) {
       const pubUTC = parsePubUTC(String(it?.pubDate || ""));
       if (!pubUTC) continue;
 
-      // 시간 필터: UTC 비교
+      // 시간 필터: UTC 비교 (<= lastChecked 제외)
       if (lastChecked && pubUTC.getTime() <= lastChecked.getTime()) {
         stopDueToOld = true;
         continue;
@@ -210,21 +245,24 @@ async function searchRecentNews(env: Env) {
       time_filtered++;
       pubTimesUTC.push(pubUTC);
 
-      // 포함/제외 필터
+      // 정규화된 제목
+      const tNorm = norm(title);
+
+      // 포함 필터
       let includeOk = true;
       if (cfg.include_keywords.length) {
-        const t = title.toLowerCase();
-        includeOk = cfg.include_keywords.some(k => t.includes(k.toLowerCase()));
+        includeOk = cfg.include_keywords.some(k => tNorm.includes(norm(k)));
       }
       if (!includeOk) { title_include_fail++; continue; }
 
+      // 제외 필터
       if (cfg.exclude_keywords.length) {
-        const t = title.toLowerCase();
-        if (cfg.exclude_keywords.some(k => t.includes(k.toLowerCase()))) {
+        if (cfg.exclude_keywords.some(k => tNorm.includes(norm(k)))) {
           title_exclude_hit++; continue;
         }
       }
 
+      // 링크 중복 제거
       if (seen.has(link)) continue;
       seen.add(link);
 
