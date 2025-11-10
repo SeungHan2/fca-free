@@ -29,6 +29,12 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const fmtUTC = (d: Date) =>
   `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
 
+// HH:MM:SS (KST 기준)만 뽑는 헬퍼 추가
+function fmtKSTClockLabel(dUTC: Date) {
+  const k = toKST(dUTC);
+  return `${pad(k.getUTCHours())}:${pad(k.getUTCMinutes())}:${pad(k.getUTCSeconds())}`;
+}
+
 const KV_LAST_SENT = "last_sent_target_iso";      // 짝수시 정각(UTC) ISO
 const KV_LAST_CHECKED = "last_checked_time_iso";  // 마지막 본 기사 시각(UTC) ISO
 const KV_CFG = "cfg:APP";                         // 설정 JSON 저장 키
@@ -374,7 +380,10 @@ async function handleTestPreview(env: Env) {
   const totalExcl = loopReports.reduce((s, r) => s + (r.title_exclude_hit || 0), 0);
   const totalPass = loopReports.reduce((s, r) => s + (r.title_include_pass || 0), 0);
 
-  const head = `🧪 TEST PREVIEW [${collected.length}건] (${fmtUTC(nowKST)} KST)\n• 정책결과: ${shouldSend ? "보낼 예정(조건 충족)" : "보류 예정(조건 미충족)"}\n• 임계값(MIN_SEND_THRESHOLD): ${cfg.min_send_threshold}`;
+  // 헤더 라인 포맷 통일: (HH:MM:SS 기준) *FREE 버전
+  const timeLabel = fmtKSTClockLabel(nowUTC);
+  const head = `🧪 TEST PREVIEW [${collected.length}건] (${timeLabel} 기준) *FREE 버전\n• 정책결과: ${shouldSend ? "보낼 예정(조건 충족)" : "보류 예정(조건 미충족)"}\n• 임계값(MIN_SEND_THRESHOLD): ${cfg.min_send_threshold}`;
+
   const loops = [
     `(집계) (제외${totalExcl}) 제목통과 ${totalPass} / 최신${totalLatest}`,
     ...loopReports.map(r => `(${r.call_no}차) 최신${r.time_filtered} / 호출${r.fetched}`),
@@ -429,7 +438,7 @@ export default {
       });
     }
 
-    if (url.pathname === "/test") {
+    if (url.pathname.toLowerCase() === "/test") {
       return await handleTestPreview(env); // 공개 미리보기
     }
 
@@ -475,8 +484,10 @@ export default {
       const icon = (shouldSend && collected.length > 0) ? "✅" : "⏸️";
       const status = (shouldSend && collected.length > 0) ? "발송" : "보류";
 
+      // 1행 포맷 변경: (HH:MM:SS 기준) *FREE 버전
+      const timeLabel = fmtKSTClockLabel(nowUTC);
       const lines: string[] = [];
-      lines.push(`${icon} ${status} [${collected.length}건] (${fmtUTC(nowKST)} KST 기준)`);
+      lines.push(`${icon} ${status} [${collected.length}건] (${timeLabel} 기준) *FREE 버전`);
       lines.push(`(제외${totalExcl}) 제목통과 ${totalPass} / 최신${totalLatest}`);
       for (const r of loopReports) lines.push(`(${r.call_no}차) 최신${r.time_filtered} / 호출${r.fetched}`);
       lines.push(`(최신) ${latestStr} ~ ${earliestStr}`);
