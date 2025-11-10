@@ -8,8 +8,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -19,10 +17,17 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Deploy with Wrangler
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CF_API_TOKEN }}
-          command: deploy
+      - name: Install Wrangler v4
+        run: npm i -g wrangler@4
+
+      # ✅ 토큰/계정 확인 단계 - 실패하면 이유가 바로 보입니다
+      - name: Wrangler whoami
+        run: wrangler whoami
         env:
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+
+      # ✅ 실제 배포
+      - name: Deploy
+        run: wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
