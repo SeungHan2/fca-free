@@ -83,12 +83,33 @@ function norm(s: string): string {
   }
 }
 
+// 텔레그램 HTML 모드용 이스케이프: 큰따옴표(")는 그대로 둔다
 function escapeHtml(s: string) {
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/>/g, "&gt;");
+}
+
+// 간단한 HTML 엔터티 디코더 (&quot;, &#39; 등 처리)
+function decodeHtml(s: string) {
+  if (!s) return s;
+  // 숫자 엔터티 (10진수)
+  s = s.replace(/&#(\d+);/g, (_m, n) => {
+    try { return String.fromCharCode(parseInt(n, 10)); } catch { return _m; }
+  });
+  // 숫자 엔터티 (16진수)
+  s = s.replace(/&#x([0-9a-fA-F]+);/g, (_m, n) => {
+    try { return String.fromCharCode(parseInt(n, 16)); } catch { return _m; }
+  });
+  // 명명 엔터티
+  return s
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&"); // 마지막에 &amp;
 }
 
 // 추적 파라미터 제거 + https 고정 → 링크 중복 방지
@@ -267,7 +288,9 @@ async function searchRecentNews(env: Env) {
 
     for (const it of items) {
       const rawTitle = String(it?.title || "");
-      const title = rawTitle.replace(/<b>/g, "").replace(/<\/b>/g, "");
+      const title = decodeHtml(
+        rawTitle.replace(/<\/?b>/g, "")
+      );
       const link = normalizeUrl(String(it?.link || "").trim());
       const pubUTC = parsePubUTC(String(it?.pubDate || ""));
       if (!pubUTC) continue;
