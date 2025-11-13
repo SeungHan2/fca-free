@@ -405,26 +405,49 @@ async function handleTestPreview(env: Env) {
 
   // 헤더 라인 포맷 통일: (HH:MM:SS 기준) *FREE 버전
   const timeLabel = fmtKSTClockLabel(nowUTC);
-  const head = `🧪 TEST PREVIEW [${collected.length}건] (${timeLabel} 기준) *FREE 버전\n• 정책결과: ${shouldSend ? "보낼 예정(조건 충족)" : "보류 예정(조건 미충족)"}\n• 임계값(MIN_SEND_THRESHOLD): ${cfg.min_send_threshold}`;
+  const head =
+    `🧪 TEST PREVIEW [${collected.length}건] (${timeLabel} 기준) *FREE 버전\n` +
+    `• 정책결과: ${shouldSend ? "보낼 예정(조건 충족)" : "보류 예정(조건 미충족)"}\n` +
+    `• 임계값(MIN_SEND_THRESHOLD): ${cfg.min_send_threshold}`;
 
-  const loops = [
-    `(집계) (제외${totalExcl}) 제목통과 ${totalPass} / 최신${totalLatest}`,
-    ...loopReports.map(r => `(${r.call_no}차) 최신${r.time_filtered} / 호출${r.fetched}`),
-    `(최신) ${latestStr} ~ ${earliestStr}`
-  ].join("\n");
-  const body = collected.map((it, i) => `${i + 1}. <b>${escapeHtml(it.title)}</b>\n${it.link}`).join("\n");
+  // 집계/루프 포맷: (-제외) 제목통과 ← 최신 | (제외)제목통과/최신, (n차) 최신 ← 호출 | 최신/호출
+  const exclLabel = totalExcl > 0 ? `(-${totalExcl})` : `(0)`;
+  const loopsLines = [
+    `${exclLabel} ${totalPass} ← ${totalLatest} | (제외)제목통과/최신`,
+    ...loopReports.map(
+      r => `(${r.call_no}차) ${r.time_filtered} ← ${r.fetched} | 최신/호출`
+    ),
+    `(최신) ${latestStr} ~ ${earliestStr}`,
+  ];
+  const loops = loopsLines.join("\n");
 
-  await sendTelegram([head, loops, body || "— 후보 없음 —"].join("\n"), env.ADMIN_CHAT_ID, env);
+  const body = collected
+    .map((it, i) => `${i + 1}. <b>${escapeHtml(it.title)}</b>\n${it.link}`)
+    .join("\n");
 
-  return new Response(JSON.stringify({
-    shouldSend,
-    minSend: cfg.min_send_threshold,
-    count: collected.length,
-    items: collected.map(it => ({ title: it.title, link: it.link })),
-    loopReports,
-    latestStr, earliestStr,
-    cfg
-  }, null, 2), { status: 200, headers: { "content-type": "application/json; charset=utf-8" } });
+  await sendTelegram(
+    [head, loops, body || "— 후보 없음 —"].join("\n"),
+    env.ADMIN_CHAT_ID,
+    env
+  );
+
+  return new Response(
+    JSON.stringify(
+      {
+        shouldSend,
+        minSend: cfg.min_send_threshold,
+        count: collected.length,
+        items: collected.map(it => ({ title: it.title, link: it.link })),
+        loopReports,
+        latestStr,
+        earliestStr,
+        cfg,
+      },
+      null,
+      2
+    ),
+    { status: 200, headers: { "content-type": "application/json; charset=utf-8" } }
+  );
 }
 
 /* ───────────────────────── Worker ───────────────────────── */
@@ -489,34 +512,66 @@ export default {
         return;
       }
 
-      const shouldSend = computeShouldSend(nowKST, collected.length, cfg.min_send_threshold, cfg.force_hours);
+      const shouldSend = computeShouldSend(
+        nowKST,
+        collected.length,
+        cfg.min_send_threshold,
+        cfg.force_hours
+      );
 
       if (shouldSend && collected.length > 0) {
-        const body = collected.map((it, i) =>
-          `${i + 1}. <b>${escapeHtml(it.title)}</b>\n${it.link}`
-        ).join("\n");
+        const body = collected
+          .map(
+            (it, i) =>
+              `${i + 1}. <b>${escapeHtml(it.title)}</b>\n${it.link}`
+          )
+          .join("\n");
         await sendTelegram(body, env.TELEGRAM_CHAT_ID, env);
 
         await env.FCANEWS_KV.put(KV_LAST_SENT, targetIso);
-        if (latestUTC) await env.FCANEWS_KV.put(KV_LAST_CHECKED, latestUTC.toISOString());
+        if (latestUTC)
+          await env.FCANEWS_KV.put(KV_LAST_CHECKED, latestUTC.toISOString());
       }
 
-      const totalLatest = loopReports.reduce((s, r) => s + (r.time_filtered || 0), 0);
-      const totalExcl = loopReports.reduce((s, r) => s + (r.title_exclude_hit || 0), 0);
-      const totalPass = loopReports.reduce((s, r) => s + (r.title_include_pass || 0), 0);
-      const icon = (shouldSend && collected.length > 0) ? "✅" : "⏸️";
-      const status = (shouldSend && collected.length > 0) ? "발송" : "보류";
+      const totalLatest = loopReports.reduce(
+        (s, r) => s + (r.time_filtered || 0),
+        0
+      );
+      const totalExcl = loopReports.reduce(
+        (s, r) => s + (r.title_exclude_hit || 0),
+        0
+      );
+      const totalPass = loopReports.reduce(
+        (s, r) => s + (r.title_include_pass || 0),
+        0
+      );
+      const icon = shouldSend && collected.length > 0 ? "✅" : "⏸️";
+      const status = shouldSend && collected.length > 0 ? "발송" : "보류";
 
-      // 1행 포맷 변경: (HH:MM:SS 기준) *FREE 버전
+      // 1행 포맷: (HH:MM:SS 기준) *FREE 버전
       const timeLabel = fmtKSTClockLabel(nowUTC);
       const lines: string[] = [];
-      lines.push(`${icon} ${status} [${collected.length}건] (${timeLabel} 기준) *FREE 버전`);
-      lines.push(`(제외${totalExcl}) 제목통과 ${totalPass} / 최신${totalLatest}`);
-      for (const r of loopReports) lines.push(`(${r.call_no}차) 최신${r.time_filtered} / 호출${r.fetched}`);
+      lines.push(
+        `${icon} ${status} [${collected.length}건] (${timeLabel} 기준) *FREE 버전`
+      );
+
+      // 2행: (-제외) 제목통과 ← 최신 | (제외)제목통과/최신  (제외가 0일 경우 마이너스 기호 생략)
+      const exclLabel = totalExcl > 0 ? `(-${totalExcl})` : `(0)`;
+      lines.push(`${exclLabel} ${totalPass} ← ${totalLatest} | (제외)제목통과/최신`);
+
+      // 루프별: (n차) 최신 ← 호출 | 최신/호출
+      for (const r of loopReports) {
+        lines.push(`(${r.call_no}차) ${r.time_filtered} ← ${r.fetched} | 최신/호출`);
+      }
+
       lines.push(`(최신) ${latestStr} ~ ${earliestStr}`);
       await sendTelegram(lines.join("\n"), env.ADMIN_CHAT_ID, env);
     } catch (e: any) {
-      await sendTelegram(`❗️ fca-news error\n${String(e?.message || e)}`, env.ADMIN_CHAT_ID, env);
+      await sendTelegram(
+        `❗️ fca-news error\n${String(e?.message || e)}`,
+        env.ADMIN_CHAT_ID,
+        env
+      );
       console.error(e);
     }
   },
