@@ -333,6 +333,7 @@ async function searchRecentNews(env: Env) {
       time_filtered,
       title_include_fail,
       title_exclude_hit,
+      // ⛔ 제외필터 적용 전 제목 통과 수 (사용자 의도 유지)
       title_include_pass: Math.max(0, time_filtered - title_include_fail),
     });
 
@@ -403,32 +404,38 @@ async function handleTestPreview(env: Env) {
   const totalExcl = loopReports.reduce((s, r) => s + (r.title_exclude_hit || 0), 0);
   const totalPass = loopReports.reduce((s, r) => s + (r.title_include_pass || 0), 0);
 
-  // 헤더 라인 포맷 통일: (HH:MM:SS 기준) 
   const timeLabel = fmtKSTClockLabel(nowUTC);
-  const head =
-    `🧪 TEST PREVIEW [${collected.length}건] (${timeLabel} 기준)\n` +
-    `• ${shouldSend ? "보낼 예정(조건 충족)" : "보류 예정(조건 미충족)"}`;
+
+  // 라인 단위로 조립해서 불필요한 공백 제거
+  const lines: string[] = [];
+
+  // 헤더 2줄
+  lines.push(`🧪 TEST PREVIEW [${collected.length}건] (${timeLabel} 기준)`);
+  lines.push(`• ${shouldSend ? "보낼 예정(조건 충족)" : "보류 예정(조건 미충족)"}`);
 
   // 집계/루프 포맷: (-제외) 제목통과 ← 최신 | (제외)제목통과/최신, (n차) 최신 ← 호출 | 최신/호출
   const exclLabel = totalExcl > 0 ? `(-${totalExcl})` : `(0)`;
-  const loopsLines = [
-    `${exclLabel} ${totalPass} ← ${totalLatest} | (제외)제목통과/최신`,
-    ...loopReports.map(
-      r => `(${r.call_no}차) ${r.time_filtered} ← ${r.fetched} | 최신/호출`
-    ),
-    `(최신) ${latestStr} ~ ${earliestStr}`,
-  ];
-  const loops = loopsLines.join("\n");
+  lines.push(`${exclLabel} ${totalPass} ← ${totalLatest} | (제외)제목통과/최신`);
 
-  const body = collected
-    .map((it, i) => `${i + 1}. <b>${escapeHtml(it.title)}</b>\n${it.link}`)
-    .join("\n");
+  for (const r of loopReports) {
+    lines.push(`(${r.call_no}차) ${r.time_filtered} ← ${r.fetched} | 최신/호출`);
+  }
 
-  await sendTelegram(
-    [head, loops, body || "— 후보 없음 —"].join("\n"),
-    env.ADMIN_CHAT_ID,
-    env
-  );
+  lines.push(`(최신) ${latestStr} ~ ${earliestStr}`);
+
+  // 기사 목록
+  if (collected.length > 0) {
+    lines.push("");
+    collected.forEach((it, i) => {
+      lines.push(`${i + 1}. <b>${escapeHtml(it.title)}</b>`);
+      lines.push(it.link);
+    });
+  } else {
+    lines.push("");
+    lines.push("— 후보 없음 —");
+  }
+
+  await sendTelegram(lines.join("\n"), env.ADMIN_CHAT_ID, env);
 
   return new Response(
     JSON.stringify(
