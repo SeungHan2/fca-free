@@ -57,9 +57,7 @@ INCLUDE_KEYWORDS = """
 """
 
 EXCLUDE_KEYWORDS = """
-비글즈
-세징야
-47초
+퓨처스
 """
 
 DISPLAY_PER_CALL = "30"      # 네이버 1페이지 건수(최대 100)
