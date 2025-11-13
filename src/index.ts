@@ -403,10 +403,10 @@ async function handleTestPreview(env: Env) {
   const totalExcl = loopReports.reduce((s, r) => s + (r.title_exclude_hit || 0), 0);
   const totalPass = loopReports.reduce((s, r) => s + (r.title_include_pass || 0), 0);
 
-  // 헤더 라인 포맷 통일: (HH:MM:SS 기준) *FREE 버전
+  // 헤더 라인 포맷 통일: (HH:MM:SS 기준) 
   const timeLabel = fmtKSTClockLabel(nowUTC);
   const head =
-    `🧪 TEST PREVIEW [${collected.length}건] (${timeLabel} 기준) *FREE 버전\n` +
+    `🧪 TEST PREVIEW [${collected.length}건] (${timeLabel} 기준)\n` +
     `• 정책결과: ${shouldSend ? "보낼 예정(조건 충족)" : "보류 예정(조건 미충족)"}\n` +
     `• 임계값(MIN_SEND_THRESHOLD): ${cfg.min_send_threshold}`;
 
@@ -548,11 +548,11 @@ export default {
       const icon = shouldSend && collected.length > 0 ? "✅" : "⏸️";
       const status = shouldSend && collected.length > 0 ? "발송" : "보류";
 
-      // 1행 포맷: (HH:MM:SS 기준) *FREE 버전
+      // 1행 포맷: (HH:MM:SS 기준) 
       const timeLabel = fmtKSTClockLabel(nowUTC);
       const lines: string[] = [];
       lines.push(
-        `${icon} ${status} [${collected.length}건] (${timeLabel} 기준) *FREE 버전`
+        `${icon} ${status} [${collected.length}건] (${timeLabel} 기준)`
       );
 
       // 2행: (-제외) 제목통과 ← 최신 | (제외)제목통과/최신  (제외가 0일 경우 마이너스 기호 생략)
