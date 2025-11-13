@@ -407,7 +407,7 @@ async function handleTestPreview(env: Env) {
   const timeLabel = fmtKSTClockLabel(nowUTC);
   const head =
     `🧪 TEST PREVIEW [${collected.length}건] (${timeLabel} 기준)\n` +
-    `• ${shouldSend ? "보낼 예정(조건 충족)" : "보류 예정(조건 미충족)"}\n`;
+    `• ${shouldSend ? "보낼 예정(조건 충족)" : "보류 예정(조건 미충족)"}`;
 
   // 집계/루프 포맷: (-제외) 제목통과 ← 최신 | (제외)제목통과/최신, (n차) 최신 ← 호출 | 최신/호출
   const exclLabel = totalExcl > 0 ? `(-${totalExcl})` : `(0)`;
