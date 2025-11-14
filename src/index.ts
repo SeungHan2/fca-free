@@ -503,6 +503,8 @@ export default {
     );
   },
 
+
+
   async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     try {
       const { cfg, collected, loopReports, latestStr, earliestStr, latestUTC } = await searchRecentNews(env);
@@ -525,7 +527,11 @@ export default {
         cfg.force_hours
       );
 
-      if (shouldSend && collected.length > 0) {
+      // ★ 실제 발송 여부 플래그 (발송 조건 + 기사 1건 이상)
+      const hadRealSend = shouldSend && collected.length > 0;
+
+      // ★ 본채널 실제 발송
+      if (hadRealSend) {
         const body = collected
           .map(
             (it, i) =>
@@ -534,11 +540,14 @@ export default {
           .join("\n");
         await sendTelegram(body, env.TELEGRAM_CHAT_ID, env);
 
+        // 발송된 회차의 정각 마킹
         await env.FCANEWS_KV.put(KV_LAST_SENT, targetIso);
+        // 이 경우에는 기사 기준 시간도 함께 업데이트
         if (latestUTC)
           await env.FCANEWS_KV.put(KV_LAST_CHECKED, latestUTC.toISOString());
       }
 
+      // 집계값 계산 (관리자 리포트 + 추가 로직에서 공통 사용)
       const totalLatest = loopReports.reduce(
         (s, r) => s + (r.time_filtered || 0),
         0
@@ -551,8 +560,15 @@ export default {
         (s, r) => s + (r.title_include_pass || 0),
         0
       );
-      const icon = shouldSend && collected.length > 0 ? "✅" : "⏸️";
-      const status = shouldSend && collected.length > 0 ? "발송" : "보류";
+
+      // ★ [신규] 발송은 없었지만, 제목통과 기사는 있었고 전부 제외/중복으로 빠진 경우
+      //     → 기사 구간은 처리된 것으로 보고 last_checked_time_iso를 최신 기사 시각으로 갱신
+      if (!hadRealSend && latestUTC && totalPass > 0 && collected.length === 0) {
+        await env.FCANEWS_KV.put(KV_LAST_CHECKED, latestUTC.toISOString());
+      }
+
+      const icon = hadRealSend ? "✅" : "⏸️";
+      const status = hadRealSend ? "발송" : "보류";
 
       // 1행 포맷: (HH:MM:SS 기준) 
       const timeLabel = fmtKSTClockLabel(nowUTC);
