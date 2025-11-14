@@ -29,7 +29,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const fmtUTC = (d: Date) =>
   `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
 
-// HH:MM:SS (KST 기준)만 뽑는 헬퍼 추가
+// HH:MM:SS (KST 기준)만 뽑는 헬퍼
 function fmtKSTClockLabel(dUTC: Date) {
   const k = toKST(dUTC);
   return `${pad(k.getUTCHours())}:${pad(k.getUTCMinutes())}:${pad(k.getUTCSeconds())}`;
@@ -503,8 +503,6 @@ export default {
     );
   },
 
-
-
   async scheduled(event: ScheduledEvent, env: Env): Promise<void> {
     try {
       const { cfg, collected, loopReports, latestStr, earliestStr, latestUTC } = await searchRecentNews(env);
@@ -527,10 +525,10 @@ export default {
         cfg.force_hours
       );
 
-      // ★ 실제 발송 여부 플래그 (발송 조건 + 기사 1건 이상)
+      // 실제 발송 여부 플래그 (발송 조건 + 기사 1건 이상)
       const hadRealSend = shouldSend && collected.length > 0;
 
-      // ★ 본채널 실제 발송
+      // 본채널 실제 발송
       if (hadRealSend) {
         const body = collected
           .map(
@@ -561,16 +559,16 @@ export default {
         0
       );
 
-      // ★ [신규] 발송은 없었지만, 제목통과 기사는 있었고 전부 제외/중복으로 빠진 경우
-      //     → 기사 구간은 처리된 것으로 보고 last_checked_time_iso를 최신 기사 시각으로 갱신
-      if (!hadRealSend && latestUTC && totalPass > 0 && collected.length === 0) {
+      // [신규] 발송은 없었지만, 이번 회차에 새 기사는 있었고(collected는 0건인 경우)
+      //  → 관심 없는 기사(포함/제외/중복 등)만 있었던 구간이므로, latestUTC까지는 "본 것"으로 처리
+      if (!hadRealSend && latestUTC && collected.length === 0) {
         await env.FCANEWS_KV.put(KV_LAST_CHECKED, latestUTC.toISOString());
       }
 
       const icon = hadRealSend ? "✅" : "⏸️";
       const status = hadRealSend ? "발송" : "보류";
 
-      // 1행 포맷: (HH:MM:SS 기준) 
+      // 1행 포맷: (HH:MM:SS 기준)
       const timeLabel = fmtKSTClockLabel(nowUTC);
       const lines: string[] = [];
       lines.push(
