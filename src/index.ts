@@ -29,7 +29,7 @@ const pad = (n: number) => String(n).padStart(2, "0");
 const fmtUTC = (d: Date) =>
   `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
 
-// HH:MM:SS (KST 기준)만 뽑는 헬퍼
+// HH:MM:SS (KST 기준)만 뽑는 헬퍼 추가
 function fmtKSTClockLabel(dUTC: Date) {
   const k = toKST(dUTC);
   return `${pad(k.getUTCHours())}:${pad(k.getUTCMinutes())}:${pad(k.getUTCSeconds())}`;
@@ -134,6 +134,138 @@ function parsePubUTC(pub: string): Date | null {
   } catch {
     return null;
   }
+}
+
+// 기사 클러스터링용 타입
+type ArticleItem = { title: string; link: string; pubUTC: Date };
+type ArticleCluster = {
+  repTitle: string;
+  articles: ArticleItem[];
+  latestPubUTC: Date;
+};
+
+// 제목 토큰화 (한글/영문/숫자만 남기고 분리)
+function tokenizeTitleForCluster(title: string): string[] {
+  const cleaned = norm(title).replace(/[^0-9a-z\uac00-\ud7a3]+/g, " ");
+  return cleaned.split(/\s+/).filter(Boolean);
+}
+
+// Jaccard 유사도 (토큰 집합 기준)
+function jaccardSimilarity(a: string[], b: string[]): number {
+  if (!a.length || !b.length) return 0;
+  const setA = new Set(a);
+  const setB = new Set(b);
+  let inter = 0;
+  for (const t of setA) {
+    if (setB.has(t)) inter++;
+  }
+  const union = setA.size + setB.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
+
+// 도메인 짧게 표시
+function shortHostname(urlStr: string): string {
+  try {
+    const u = new URL(urlStr);
+    let h = u.hostname.toLowerCase();
+    if (h.startsWith("www.")) h = h.slice(4);
+    if (h.startsWith("m.")) h = h.slice(2);
+    return h;
+  } catch {
+    return "";
+  }
+}
+
+// 기사들을 제목 유사도로 묶기
+function clusterArticles(articles: ArticleItem[]): ArticleCluster[] {
+  const clusters: ArticleCluster[] = [];
+  const tokenCache = new Map<string, string[]>();
+  const getTokens = (title: string) => {
+    let t = tokenCache.get(title);
+    if (!t) {
+      t = tokenizeTitleForCluster(title);
+      tokenCache.set(title, t);
+    }
+    return t;
+  };
+
+  const THRESHOLD = 0.5; // 0~1, 클수록 더 비슷할 때만 묶임
+
+  for (const art of articles) {
+    const tokens = getTokens(art.title);
+    let bestIdx = -1;
+    let bestSim = 0;
+
+    for (let i = 0; i < clusters.length; i++) {
+      const repTokens = getTokens(clusters[i].repTitle);
+      const sim = jaccardSimilarity(tokens, repTokens);
+      if (sim > bestSim) {
+        bestSim = sim;
+        bestIdx = i;
+      }
+    }
+
+    if (bestIdx >= 0 && bestSim >= THRESHOLD) {
+      const cluster = clusters[bestIdx];
+      cluster.articles.push(art);
+      if (art.pubUTC.getTime() > cluster.latestPubUTC.getTime()) {
+        cluster.latestPubUTC = art.pubUTC;
+      }
+    } else {
+      clusters.push({
+        repTitle: art.title,
+        articles: [art],
+        latestPubUTC: art.pubUTC,
+      });
+    }
+  }
+
+  // 클러스터를 최신 기사 시각 기준 내림차순 정렬
+  clusters.sort((a, b) => b.latestPubUTC.getTime() - a.latestPubUTC.getTime());
+  // 각 클러스터 내부도 최신순으로 정렬
+  for (const c of clusters) {
+    c.articles.sort((a, b) => b.pubUTC.getTime() - a.pubUTC.getTime());
+  }
+
+  return clusters;
+}
+
+// 클러스터링된 기사 리스트를 텔레그램용 라인 배열로 변환
+function buildClusteredArticleLines(collected: ArticleItem[]): string[] {
+  if (!collected.length) {
+    return ["— 후보 없음 —"];
+  }
+
+  const clusters = clusterArticles(collected);
+  const lines: string[] = [];
+  let idx = 1;
+
+  for (const cluster of clusters) {
+    const headerNo = idx++;
+    const baseTitle = cluster.repTitle;
+
+    if (cluster.articles.length === 1) {
+      const art = cluster.articles[0];
+      lines.push(`${headerNo}) <b>${escapeHtml(art.title)}</b>`);
+      lines.push(`   <a href="${art.link}">🔗 기사 보기</a>`);
+    } else {
+      lines.push(`${headerNo}) <b>${escapeHtml(baseTitle)}</b> (${cluster.articles.length}건)`);
+      for (const art of cluster.articles) {
+        const host = shortHostname(art.link);
+        const hostLabel = host || "링크";
+        lines.push(`   • ${hostLabel}: <a href="${art.link}">기사 보기</a>`);
+      }
+    }
+
+    lines.push(""); // 클러스터 간 빈 줄
+  }
+
+  // 마지막 빈 줄 제거
+  if (lines.length && lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+
+  return lines;
 }
 
 // 이번 타임(짝수시 정각, KST 기준) 목표 시각 계산 → UTC로 변환
@@ -423,17 +555,10 @@ async function handleTestPreview(env: Env) {
 
   lines.push(`(최신) ${latestStr} ~ ${earliestStr}`);
 
-  // 기사 목록
-  if (collected.length > 0) {
-    lines.push("");
-    collected.forEach((it, i) => {
-      lines.push(`${i + 1}. <b>${escapeHtml(it.title)}</b>`);
-      lines.push(it.link);
-    });
-  } else {
-    lines.push("");
-    lines.push("— 후보 없음 —");
-  }
+  // 기사 목록 (제목 유사도로 클러스터링)
+  lines.push("");
+  const articleLines = buildClusteredArticleLines(collected);
+  lines.push(...articleLines);
 
   await sendTelegram(lines.join("\n"), env.ADMIN_CHAT_ID, env);
 
@@ -528,14 +653,10 @@ export default {
       // 실제 발송 여부 플래그 (발송 조건 + 기사 1건 이상)
       const hadRealSend = shouldSend && collected.length > 0;
 
-      // 본채널 실제 발송
+      // ★ 본채널 실제 발송 (기사들을 제목 유사도로 클러스터링해서 발송)
       if (hadRealSend) {
-        const body = collected
-          .map(
-            (it, i) =>
-              `${i + 1}. <b>${escapeHtml(it.title)}</b>\n${it.link}`
-          )
-          .join("\n");
+        const articleLines = buildClusteredArticleLines(collected);
+        const body = articleLines.join("\n");
         await sendTelegram(body, env.TELEGRAM_CHAT_ID, env);
 
         // 발송된 회차의 정각 마킹
@@ -559,8 +680,8 @@ export default {
         0
       );
 
-      // [신규] 발송은 없었지만, 이번 회차에 새 기사는 있었고(collected는 0건인 경우)
-      //  → 관심 없는 기사(포함/제외/중복 등)만 있었던 구간이므로, latestUTC까지는 "본 것"으로 처리
+      // ★ [신규] 발송은 없었지만, 이번 회차에 새 기사(latestUTC)는 있었고 최종 발송 후보는 0건인 경우
+      //     → 관심 없는 기사들만 있었던 구간이므로 latestUTC까지는 "본 것"으로 처리
       if (!hadRealSend && latestUTC && collected.length === 0) {
         await env.FCANEWS_KV.put(KV_LAST_CHECKED, latestUTC.toISOString());
       }
@@ -568,7 +689,7 @@ export default {
       const icon = hadRealSend ? "✅" : "⏸️";
       const status = hadRealSend ? "발송" : "보류";
 
-      // 1행 포맷: (HH:MM:SS 기준)
+      // 1행 포맷: (HH:MM:SS 기준) 
       const timeLabel = fmtKSTClockLabel(nowUTC);
       const lines: string[] = [];
       lines.push(
