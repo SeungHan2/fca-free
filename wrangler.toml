@@ -67,6 +67,7 @@ EXCLUDE_KEYWORDS = """
 임금
 경찰
 고발
+선거법
 """
 
 DISPLAY_PER_CALL = "30"      # 네이버 1페이지 건수(최대 100)
