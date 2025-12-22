@@ -56,6 +56,8 @@ INCLUDE_KEYWORDS = """
 리영직
 김연건
 최건주
+이진용
+김현
 """
 
 EXCLUDE_KEYWORDS = """
@@ -68,6 +70,7 @@ EXCLUDE_KEYWORDS = """
 경찰
 고발
 선거법
+10대
 """
 
 DISPLAY_PER_CALL = "30"      # 네이버 1페이지 건수(최대 100)
