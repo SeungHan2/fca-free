@@ -33,7 +33,7 @@ INCLUDE_KEYWORDS = """
 김정현
 마테우스
 야고
-모따
+
 김운
 김다솔
 이상용
@@ -58,6 +58,7 @@ INCLUDE_KEYWORDS = """
 최건주
 이진용
 김현
+김정훈
 """
 
 EXCLUDE_KEYWORDS = """
