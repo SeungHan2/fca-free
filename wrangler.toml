@@ -74,6 +74,7 @@ EXCLUDE_KEYWORDS = """
 10대
 수목원
 신영재
+김동수
 """
 
 DISPLAY_PER_CALL = "30"      # 네이버 1페이지 건수(최대 100)
