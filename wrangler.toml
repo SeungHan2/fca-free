@@ -76,6 +76,7 @@ EXCLUDE_KEYWORDS = """
 신영재
 김동수
 신년사
+굳건
 """
 
 DISPLAY_PER_CALL = "30"      # 네이버 1페이지 건수(최대 100)
