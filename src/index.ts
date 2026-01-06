@@ -419,10 +419,14 @@ async function searchRecentNews(env: Env) {
     let fetched = items.length, time_filtered = 0, title_include_fail = 0, title_exclude_hit = 0;
 
     for (const it of items) {
+      // 1. 제목 가져오기 및 정규화
       const rawTitle = String(it?.title || "");
-      const title = decodeHtml(
-        rawTitle.replace(/<\/?b>/g, "")
-      );
+      const title = decodeHtml(rawTitle.replace(/<\/?b>/g, ""));
+
+      // [추가] 2. 요약문(description) 가져오기 (제목 말줄임 보완용)
+      const rawDesc = String(it?.description || "");
+      const description = decodeHtml(rawDesc.replace(/<\/?b>/g, ""));
+
       const link = normalizeUrl(String(it?.link || "").trim());
       const pubUTC = parsePubUTC(String(it?.pubDate || ""));
       if (!pubUTC) continue;
@@ -435,19 +439,26 @@ async function searchRecentNews(env: Env) {
       time_filtered++;
       pubTimesUTC.push(pubUTC);
 
-      // 정규화된 제목
+      // 검사용 텍스트 정규화
       const tNorm = norm(title);
+      const dNorm = norm(description); // [추가] 요약문 정규화
 
-      // 포함 필터
+      // 포함 필터 (제목 기준 유지)
+      // *필요하다면 dNorm도 포함 조건에 넣을 수 있으나, 
+      //  보통 '제목'에 핵심 키워드가 있어야 관련성이 높으므로 제목만 유지하는 것을 추천합니다.
       let includeOk = true;
       if (cfg.include_keywords.length) {
         includeOk = cfg.include_keywords.some(k => tNorm.includes(norm(k)));
       }
       if (!includeOk) { title_include_fail++; continue; }
 
-      // 제외 필터
+      // 제외 필터 [수정됨]
+      // 제목(tNorm) 혹은 요약문(dNorm) 중 하나라도 제외 키워드가 있으면 제외
       if (cfg.exclude_keywords.length) {
-        if (cfg.exclude_keywords.some(k => tNorm.includes(norm(k)))) {
+        if (cfg.exclude_keywords.some(k => {
+            const kn = norm(k);
+            return tNorm.includes(kn) || dNorm.includes(kn);
+        })) {
           title_exclude_hit++; continue;
         }
       }
