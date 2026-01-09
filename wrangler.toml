@@ -76,6 +76,8 @@ EXCLUDE_KEYWORDS = """
 김정훈
 모따
 이진용
+서준석
+생명
 """
 
 DISPLAY_PER_CALL = "30"      # 네이버 1페이지 건수(최대 100)
