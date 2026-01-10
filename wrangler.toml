@@ -31,6 +31,7 @@ INCLUDE_KEYWORDS = """
 김영찬
 박종현
 임승겸
+홍재석
 
 이민수
 김동진
@@ -78,6 +79,7 @@ EXCLUDE_KEYWORDS = """
 이진용
 서준석
 생명
+홍재석
 """
 
 DISPLAY_PER_CALL = "30"      # 네이버 1페이지 건수(최대 100)
