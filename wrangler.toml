@@ -82,6 +82,8 @@ EXCLUDE_KEYWORDS = """
 
 디렉터
 수석코치
+생명
+의무
 """
 
 DISPLAY_PER_CALL = "30"      # 네이버 1페이지 건수(최대 100)
