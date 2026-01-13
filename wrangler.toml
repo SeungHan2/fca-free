@@ -60,11 +60,6 @@ INCLUDE_KEYWORDS = """
 이동현
 
 리영직
-김연건
-전보민
-이윤오
-에두
-
 """
 
 EXCLUDE_KEYWORDS = """
@@ -77,8 +72,6 @@ EXCLUDE_KEYWORDS = """
 경찰
 고발
 선거법
-
-신년사
 
 디렉터
 수석코치
