@@ -82,6 +82,7 @@ EXCLUDE_KEYWORDS = """
 의무
 
 미미
+유스
 """
 
 DISPLAY_PER_CALL = "30"      # 네이버 1페이지 건수(최대 100)
