@@ -86,6 +86,7 @@ EXCLUDE_KEYWORDS = """
 유스
 5일
 리더스
+홈
 """
 
 DISPLAY_PER_CALL = "30"      # 네이버 1페이지 건수(최대 100)
