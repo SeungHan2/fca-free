@@ -78,6 +78,7 @@ EXCLUDE_KEYWORDS = """
 홈
 
 이상용
+휴로테크
 """
 
 DISPLAY_PER_CALL = "30"      # 네이버 1페이지 건수(최대 100)
