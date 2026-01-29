@@ -81,6 +81,7 @@ EXCLUDE_KEYWORDS = """
 
 심폐
 도시공사
+최대호
 """
 
 DISPLAY_PER_CALL = "30"      # 네이버 1페이지 건수(최대 100)
