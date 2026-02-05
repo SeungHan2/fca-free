@@ -83,6 +83,7 @@ EXCLUDE_KEYWORDS = """
 
 심폐
 전현무
+5분
 """
 
 DISPLAY_PER_CALL = "30"      # 네이버 1페이지 건수(최대 100)
