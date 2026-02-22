@@ -78,7 +78,7 @@ EXCLUDE_KEYWORDS = """
 고발
 선거법
 
-아일톤
+모따
 """
 
 DISPLAY_PER_CALL = "30"      # 네이버 1페이지 건수(최대 100)
